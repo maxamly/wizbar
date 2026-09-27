@@ -16,7 +16,8 @@ A tiny macOS menu bar app for controlling [WiZ](https://www.wizconnected.com) sm
 - **Brightness and warm/cool white** sliders for each room or each light.
 - **Presets:** Night, Relax, Read, Focus.
 - **Blink to identify.** It flashes a bulb so you know which one you're naming.
-- About 1 MB, native SwiftUI, with no dependencies.
+- Built with Liquid Glass. About 1 MB, native SwiftUI, with no dependencies.
+- Requires macOS 26 (Tahoe) or later.
 
 <p align="center">
   <img src="docs/setup.png" width="600" alt="Room setup window">
@@ -35,7 +36,7 @@ A tiny macOS menu bar app for controlling [WiZ](https://www.wizconnected.com) sm
 
 ### Build from source
 
-You need Xcode 16 or later, or the Swift 6 toolchain.
+You need Xcode 26 or later.
 
 ```bash
 git clone https://github.com/maxamly/wizbar.git

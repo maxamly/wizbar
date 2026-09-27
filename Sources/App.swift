@@ -15,7 +15,6 @@ struct WizBarApp: App {
         Window("Set Up Lights", id: "setup") {
             SetupView().environmentObject(store)
         }
-        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
         .defaultLaunchBehavior(.suppressed)
     }

@@ -29,32 +29,35 @@ struct Panel: View {
     }
 
     private var header: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 1) {
                 Text("Lights").font(.system(size: 17, weight: .bold))
-                Text(summary).font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(summary).font(.system(size: 11)).foregroundStyle(.secondary).contentTransition(.numericText())
             }
             Spacer()
-            if store.scanning {
-                ProgressView().controlSize(.small).frame(width: 28, height: 28)
-            } else {
-                IconButton(symbol: "arrow.clockwise", help: "Refresh") { store.scan() }
-            }
-            if !store.bulbs.isEmpty {
-                IconButton(symbol: "power", help: anyOn ? "Turn everything off" : "Turn everything on") {
-                    store.apply(store.bulbs.map(\.id), ["state": !anyOn])
+            GlassEffectContainer(spacing: 6) {
+                HStack(spacing: 6) {
+                    IconButton(symbol: "arrow.clockwise", help: "Refresh", spinning: store.scanning) { store.scan() }
+                    if !store.bulbs.isEmpty {
+                        IconButton(symbol: "power", help: anyOn ? "Turn everything off" : "Turn everything on") {
+                            store.apply(store.bulbs.map(\.id), ["state": !anyOn])
+                        }
+                    }
+                    Menu {
+                        Button("Set Up Rooms…", action: openSetup)
+                        Divider()
+                        Button("Quit WizBar") { NSApp.terminate(nil) }.keyboardShortcut("q")
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 12, weight: .semibold))
+                            .frame(width: 16, height: 16)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .frame(width: 26, height: 26)
+                    .glassEffect(.regular.interactive(), in: .circle)
                 }
             }
-            Menu {
-                Button("Set Up Rooms…", action: openSetup)
-                Divider()
-                Button("Quit WizBar") { NSApp.terminate(nil) }.keyboardShortcut("q")
-            } label: {
-                Image(systemName: "ellipsis")
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .frame(width: 28, height: 28)
         }
     }
 
@@ -92,7 +95,7 @@ struct Panel: View {
                     .font(.system(size: 15))
                     .foregroundStyle(.white)
                     .frame(width: 32, height: 32)
-                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.blue.gradient))
+                    .background(Circle().fill(.blue.gradient))
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Group lights by room").font(.system(size: 12, weight: .semibold))
                     Text("Blink each one to see which is which").font(.system(size: 11)).foregroundStyle(.secondary)
@@ -101,10 +104,10 @@ struct Panel: View {
                 Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(.tertiary)
             }
             .padding(10)
-            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.primary.opacity(0.05)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: cardShape)
     }
 
     private var emptyState: some View {
@@ -190,39 +193,39 @@ struct RoomCard: View {
             }
 
             if expanded, room.dimmable {
-                HStack(spacing: 6) {
-                    ForEach(Self.presets, id: \.name) { p in
-                        Button {
-                            store.apply(room.ids, ["state": true, "temp": p.temp, "dimming": p.dimming])
-                        } label: {
-                            VStack(spacing: 3) {
-                                Image(systemName: p.icon).font(.system(size: 12))
-                                Text(p.name).font(.system(size: 10, weight: .medium))
+                GlassEffectContainer(spacing: 6) {
+                    HStack(spacing: 6) {
+                        ForEach(Self.presets, id: \.name) { p in
+                            Button {
+                                store.apply(room.ids, ["state": true, "temp": p.temp, "dimming": p.dimming])
+                            } label: {
+                                VStack(spacing: 3) {
+                                    Image(systemName: p.icon).font(.system(size: 12))
+                                    Text(p.name).font(.system(size: 10, weight: .medium))
+                                }
+                                .foregroundStyle(.primary.opacity(0.8))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 7)
+                                .contentShape(Rectangle())
                             }
-                            .foregroundStyle(.primary.opacity(0.75))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 6)
-                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.06)))
-                            .contentShape(Rectangle())
+                            .buttonStyle(.plain)
+                            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 12))
                         }
-                        .buttonStyle(.plain)
                     }
                 }
+                .transition(.blurReplace)
             }
 
-            if expanded {
-                if room.bulbs.count > 1 {
-                    VStack(spacing: 8) {
-                        ForEach(room.bulbs) { BulbRow(bulb: $0) }
-                    }
-                    .padding(.top, 2)
+            if expanded, room.bulbs.count > 1 {
+                VStack(spacing: 8) {
+                    ForEach(room.bulbs) { BulbRow(bulb: $0) }
                 }
+                .padding(.top, 2)
+                .transition(.blurReplace)
             }
         }
         .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(room.isOn ? Kelvin.color(room.temp).opacity(0.14) : Color.primary.opacity(0.05)))
+        .glassEffect(room.isOn ? .regular.tint(Kelvin.color(room.temp).opacity(0.3)) : .regular, in: cardShape)
         .animation(.easeOut(duration: 0.2), value: room.isOn)
     }
 

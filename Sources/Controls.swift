@@ -13,7 +13,7 @@ enum Kelvin {
     }
 }
 
-/// Round power button that glows in the light's color when on.
+/// Round Liquid Glass power button, tinted and glowing in the light's color when on.
 struct Orb: View {
     let on: Bool
     let color: Color
@@ -24,16 +24,20 @@ struct Orb: View {
         Button(action: action) {
             Image(systemName: on ? "lightbulb.fill" : "lightbulb")
                 .font(.system(size: size * 0.42, weight: .medium))
-                .foregroundStyle(on ? Color.black.opacity(0.6) : Color.secondary)
+                .foregroundStyle(on ? Color.black.opacity(0.6) : Color.primary.opacity(0.65))
                 .frame(width: size, height: size)
-                .background(Circle().fill(on ? color : Color.primary.opacity(0.08)))
-                .shadow(color: on ? color.opacity(0.7) : .clear, radius: size * 0.2)
+                .background(Circle().fill(on ? color : .clear))
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: .circle)
+        .shadow(color: on ? color.opacity(0.6) : .clear, radius: size * 0.25)
         .animation(.easeOut(duration: 0.2), value: on)
     }
 }
+
+/// Card shape whose corners follow the enclosing panel's corners (Liquid Glass concentricity).
+let cardShape = ConcentricRectangle(corners: .concentric(minimum: 18), isUniform: true)
 
 /// Pill-shaped brightness control (10–100%), in the style of Control Center.
 struct LevelSlider: View {
@@ -97,10 +101,11 @@ struct TempSlider: View {
                              Kelvin.color(range.upperBound)],
                     startPoint: .leading, endPoint: .trailing))
                 Circle()
-                    .fill(.white)
-                    .overlay(Circle().fill(Kelvin.color(kelvin)).padding(4))
-                    .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
+                    .fill(Kelvin.color(kelvin))
+                    .padding(5)
                     .frame(width: knob, height: knob)
+                    .glassEffect(.regular.interactive(), in: .circle)
+                    .shadow(color: .black.opacity(0.2), radius: 2, y: 1)
                     .offset(x: 3 + (geo.size.width - knob - 6) * CGFloat(fraction))
             }
             .contentShape(Capsule())
@@ -117,21 +122,22 @@ struct TempSlider: View {
     }
 }
 
-/// Small borderless icon button used in headers.
+/// Circular Liquid Glass icon button used in headers.
 struct IconButton: View {
     let symbol: String
     let help: String
+    var spinning = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 28, height: 28)
-                .contentShape(Rectangle())
+                .font(.system(size: 12, weight: .semibold))
+                .symbolEffect(.rotate, options: .repeat(.continuous), isActive: spinning)
+                .frame(width: 16, height: 16)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.glass)
+        .buttonBorderShape(.circle)
         .help(help)
     }
 }

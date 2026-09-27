@@ -4,6 +4,7 @@ import SwiftUI
 struct SetupView: View {
     @EnvironmentObject var store: Store
     @State private var newRoom = ""
+    @Namespace private var chips
 
     private static let suggestions = ["Living Room", "Bedroom", "Kitchen", "Office", "Hallway", "Bathroom"]
 
@@ -12,81 +13,75 @@ struct SetupView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 26) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Set Up Your Lights").font(.system(size: 24, weight: .bold))
-                    Text("Press **Blink** to see which light it is, then give it a name and a room.")
-                        .foregroundStyle(.secondary)
-                }
-
-                section("Rooms") {
+        Form {
+            Section {
+                GlassEffectContainer(spacing: 8) {
                     Flow(spacing: 8) {
                         ForEach(store.config.rooms, id: \.self) { room in
                             HStack(spacing: 6) {
-                                Text(room).font(.system(size: 12, weight: .medium))
-                                Button { store.removeRoom(room) } label: {
-                                    Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary)
+                                Text(room).font(.system(size: 12, weight: .semibold))
+                                Button {
+                                    withAnimation(.bouncy) { store.removeRoom(room) }
+                                } label: {
+                                    Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
                                 }
                                 .buttonStyle(.plain)
+                                .foregroundStyle(.secondary)
                                 .help("Remove room")
                             }
                             .padding(.horizontal, 12)
                             .padding(.vertical, 7)
-                            .background(Capsule().fill(Color.accentColor.opacity(0.15)))
+                            .glassEffect(.regular.tint(.accentColor.opacity(0.35)).interactive(), in: .capsule)
+                            .glassEffectID(room, in: chips)
                         }
                         ForEach(Self.suggestions.filter { !store.config.rooms.contains($0) }, id: \.self) { room in
-                            Button { store.addRoom(room) } label: {
+                            Button {
+                                withAnimation(.bouncy) { store.addRoom(room) }
+                            } label: {
                                 Label(room, systemImage: "plus")
                                     .font(.system(size: 12))
                                     .foregroundStyle(.secondary)
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 7)
-                                    .overlay(Capsule().strokeBorder(Color.secondary.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [3, 3])))
                                     .contentShape(Capsule())
                             }
                             .buttonStyle(.plain)
+                            .glassEffect(.regular.interactive(), in: .capsule)
+                            .glassEffectID(room, in: chips)
                         }
-                        TextField("Other room…", text: $newRoom)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 140)
-                            .onSubmit { store.addRoom(newRoom); newRoom = "" }
                     }
                 }
+                .padding(.vertical, 4)
 
-                section("Lights") {
-                    if bulbs.isEmpty {
-                        Text(store.scanning ? "Looking for lights…" : "No lights found.")
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity)
-                            .padding(24)
-                    } else {
-                        VStack(spacing: 0) {
-                            ForEach(Array(bulbs.enumerated()), id: \.element.id) { index, bulb in
-                                if index > 0 { Divider().padding(.leading, 56) }
-                                SetupRow(bulb: bulb)
-                            }
-                        }
-                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.04)))
+                TextField("Another room", text: $newRoom, prompt: Text("Type a room name and press Return"))
+                    .onSubmit {
+                        withAnimation(.bouncy) { store.addRoom(newRoom) }
+                        newRoom = ""
                     }
-                }
+            } header: {
+                Text("Rooms")
+            } footer: {
+                Text("Rooms appear in the menu bar panel in this order.")
+                    .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 32)
-            .padding(.top, 40)
-            .padding(.bottom, 32)
-        }
-        .frame(width: 600, height: 640)
-        .onAppear { store.scan() }
-    }
 
-    private func section(_ title: String, @ViewBuilder _ content: () -> some View) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title.uppercased())
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .tracking(0.5)
-            content()
+            Section {
+                if bulbs.isEmpty {
+                    Text(store.scanning ? "Looking for lights…" : "No lights found.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(bulbs) { SetupRow(bulb: $0) }
+                }
+            } header: {
+                Text("Lights")
+            } footer: {
+                Text("Press Blink to see which light is which, then name it and pick its room.")
+                    .foregroundStyle(.secondary)
+            }
         }
+        .formStyle(.grouped)
+        .frame(width: 620, height: 640)
+        .onAppear { store.scan() }
     }
 }
 
@@ -102,17 +97,16 @@ struct SetupRow: View {
                 store.apply([bulb.id], ["state": !bulb.on])
             }
 
-            VStack(alignment: .leading, spacing: 4) {
-                TextField("Name, e.g. Desk Lamp", text: nameBinding)
+            VStack(alignment: .leading, spacing: 3) {
+                TextField("Name", text: nameBinding, prompt: Text("Name, e.g. Desk Lamp"))
+                    .labelsHidden()
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13, weight: .medium))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
-                    .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.primary.opacity(0.06)))
+                    .background(.quinary, in: .rect(cornerRadius: 8))
                 Text("\(store.defaultName(bulb)) · \(bulb.ip)\(bulb.online ? "" : " · offline")")
                     .font(.system(size: 11).monospacedDigit())
                     .foregroundStyle(.tertiary)
-                    .padding(.leading, 8)
             }
 
             Picker("Room", selection: roomBinding) {
@@ -121,17 +115,22 @@ struct SetupRow: View {
                 ForEach(store.config.rooms, id: \.self) { Text($0).tag($0) }
             }
             .labelsHidden()
-            .frame(width: 150)
+            .fixedSize()
+            .frame(width: 150, alignment: .trailing)
 
             Button { store.blink(bulb.id) } label: {
-                Label(isBlinking ? "Blinking" : "Blink", systemImage: "lightbulb.max.fill")
-                    .symbolEffect(.pulse, isActive: isBlinking)
-                    .frame(width: 78)
+                HStack(spacing: 5) {
+                    Image(systemName: "lightbulb.max.fill")
+                        .symbolEffect(.pulse, isActive: isBlinking)
+                    Text(isBlinking ? "Blinking" : "Blink")
+                }
+                .frame(width: 76)
             }
+            .buttonStyle(.glass)
+            .buttonBorderShape(.capsule)
             .disabled(isBlinking || !bulb.online)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.vertical, 2)
     }
 
     private var nameBinding: Binding<String> {
