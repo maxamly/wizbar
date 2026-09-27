@@ -49,7 +49,7 @@ struct LevelSlider: View {
             let fraction = (value - 10) / 90
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.primary.opacity(0.08))
-                Capsule().fill(color).frame(width: max(height, geo.size.width * fraction))
+                Capsule().fill(color).frame(width: max(height, geo.size.width * CGFloat(fraction)))
                 HStack {
                     Image(systemName: "sun.max.fill")
                         .font(.system(size: height * 0.42, weight: .semibold))
@@ -101,7 +101,7 @@ struct TempSlider: View {
                     .overlay(Circle().fill(Kelvin.color(kelvin)).padding(4))
                     .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
                     .frame(width: knob, height: knob)
-                    .offset(x: 3 + (geo.size.width - knob - 6) * fraction)
+                    .offset(x: 3 + (geo.size.width - knob - 6) * CGFloat(fraction))
             }
             .contentShape(Capsule())
             .gesture(DragGesture(minimumDistance: 0)
