@@ -1,0 +1,33 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build universal app
+        run: ./build.sh --universal
+
+      - name: Zip
+        run: ditto -c -k --keepParent WizBar.app WizBar.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WizBar
+          path: WizBar.zip
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" WizBar.zip --title "WizBar $GITHUB_REF_NAME" --generate-notes

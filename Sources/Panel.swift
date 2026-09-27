@@ -1,0 +1,269 @@
+import SwiftUI
+
+/// The menu bar popover.
+struct Panel: View {
+    @EnvironmentObject var store: Store
+    @Environment(\.openWindow) private var openWindow
+    @State private var toggled: Set<String> = []
+    @State private var contentHeight: CGFloat = 0
+
+    private var anyOn: Bool { store.bulbs.contains(where: \.on) }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+                .padding(.bottom, 10)
+            ScrollView {
+                content
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 12)
+                    .background(GeometryReader { Color.clear.preference(key: HeightKey.self, value: $0.size.height) })
+            }
+            .frame(height: min(max(contentHeight, 80), 560))
+            .onPreferenceChange(HeightKey.self) { contentHeight = $0 }
+        }
+        .frame(width: 320)
+        .onAppear { store.scan() }
+    }
+
+    private var header: some View {
+        HStack(spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Lights").font(.system(size: 17, weight: .bold))
+                Text(summary).font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            Spacer()
+            if store.scanning {
+                ProgressView().controlSize(.small).frame(width: 28, height: 28)
+            } else {
+                IconButton(symbol: "arrow.clockwise", help: "Refresh") { store.scan() }
+            }
+            if !store.bulbs.isEmpty {
+                IconButton(symbol: "power", help: anyOn ? "Turn everything off" : "Turn everything on") {
+                    store.apply(store.bulbs.map(\.id), ["state": !anyOn])
+                }
+            }
+            Menu {
+                Button("Set Up Rooms…", action: openSetup)
+                Divider()
+                Button("Quit WizBar") { NSApp.terminate(nil) }.keyboardShortcut("q")
+            } label: {
+                Image(systemName: "ellipsis")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .frame(width: 28, height: 28)
+        }
+    }
+
+    private var summary: String {
+        if store.bulbs.isEmpty { return store.scanning ? "Searching…" : "No lights" }
+        let on = store.bulbs.filter(\.on).count
+        return on == 0 ? "All off" : "\(on) of \(store.bulbs.count) on"
+    }
+
+    @ViewBuilder private var content: some View {
+        VStack(spacing: 10) {
+            if store.bulbs.isEmpty {
+                emptyState
+            } else {
+                if store.config.rooms.isEmpty { setupHint }
+                ForEach(store.rooms) { room in
+                    RoomCard(room: room, expanded: expandedBinding(room))
+                }
+            }
+        }
+    }
+
+    /// Rooms start collapsed, except the single "All Lights" group before any setup.
+    private func expandedBinding(_ room: Room) -> Binding<Bool> {
+        let byDefault = store.config.rooms.isEmpty
+        return Binding(
+            get: { toggled.contains(room.id) != byDefault },
+            set: { if $0 != byDefault { toggled.insert(room.id) } else { toggled.remove(room.id) } })
+    }
+
+    private var setupHint: some View {
+        Button(action: openSetup) {
+            HStack(spacing: 10) {
+                Image(systemName: "square.grid.2x2.fill")
+                    .font(.system(size: 15))
+                    .foregroundStyle(.white)
+                    .frame(width: 32, height: 32)
+                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.blue.gradient))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Group lights by room").font(.system(size: 12, weight: .semibold))
+                    Text("Blink each one to see which is which").font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(.tertiary)
+            }
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.primary.opacity(0.05)))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "lightbulb.slash")
+                .font(.system(size: 26))
+                .foregroundStyle(.tertiary)
+            Text(store.scanning ? "Looking for lights…" : "No lights found")
+                .font(.system(size: 13, weight: .semibold))
+            if !store.scanning {
+                Text("Make sure this Mac is on the same Wi-Fi as your bulbs and Local Network access is allowed.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                Button("Search Again") { store.scan() }.controlSize(.small).padding(.top, 2)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 24)
+        .padding(.horizontal, 12)
+    }
+
+    private func openSetup() {
+        openWindow(id: "setup")
+        NSApp.activate()
+    }
+}
+
+private struct HeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+struct RoomCard: View {
+    @EnvironmentObject var store: Store
+    let room: Room
+    @Binding var expanded: Bool
+
+    private static let presets: [(name: String, icon: String, temp: Int, dimming: Int)] = [
+        ("Night", "moon.fill", 2200, 10),
+        ("Relax", "sofa.fill", 2700, 50),
+        ("Read", "book.fill", 4000, 100),
+        ("Focus", "sun.max.fill", 6500, 100),
+    ]
+
+    private var color: Color { room.isOn ? Kelvin.color(room.temp) : Color.primary.opacity(0.18) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Orb(on: room.isOn, color: Kelvin.color(room.temp)) {
+                    store.apply(room.ids, ["state": !room.isOn])
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(room.name).font(.system(size: 13, weight: .semibold))
+                    Text(status).font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button {
+                    withAnimation(.snappy(duration: 0.25)) { expanded.toggle() }
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+
+            if room.dimmable {
+                LevelSlider(
+                    value: room.dimming, color: color,
+                    onChange: { store.apply(room.ids, ["state": true, "dimming": $0], send: false) },
+                    onCommit: { store.apply(room.ids, ["state": true, "dimming": $0]) })
+            }
+            if let range = room.kelvinRange {
+                TempSlider(
+                    kelvin: room.temp, range: range,
+                    onChange: { store.apply(room.ids, ["state": true, "temp": $0], send: false) },
+                    onCommit: { store.apply(room.ids, ["state": true, "temp": $0]) })
+            }
+
+            if expanded, room.dimmable {
+                HStack(spacing: 6) {
+                    ForEach(Self.presets, id: \.name) { p in
+                        Button {
+                            store.apply(room.ids, ["state": true, "temp": p.temp, "dimming": p.dimming])
+                        } label: {
+                            VStack(spacing: 3) {
+                                Image(systemName: p.icon).font(.system(size: 12))
+                                Text(p.name).font(.system(size: 10, weight: .medium))
+                            }
+                            .foregroundStyle(.primary.opacity(0.75))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.06)))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            if expanded {
+                if room.bulbs.count > 1 {
+                    VStack(spacing: 8) {
+                        ForEach(room.bulbs) { BulbRow(bulb: $0) }
+                    }
+                    .padding(.top, 2)
+                }
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(room.isOn ? Kelvin.color(room.temp).opacity(0.14) : Color.primary.opacity(0.05)))
+        .animation(.easeOut(duration: 0.2), value: room.isOn)
+    }
+
+    private var status: String {
+        let n = room.bulbs.count
+        let lights = n == 1 ? "1 light" : "\(n) lights"
+        if room.onCount == 0 { return "Off · \(lights)" }
+        if room.onCount == n { return "On · \(lights)" }
+        return "\(room.onCount) of \(n) on"
+    }
+}
+
+struct BulbRow: View {
+    @EnvironmentObject var store: Store
+    let bulb: Bulb
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Orb(on: bulb.on, color: Kelvin.color(bulb.temp), size: 24) {
+                store.apply([bulb.id], ["state": !bulb.on])
+            }
+            VStack(alignment: .leading, spacing: 0) {
+                Text(store.name(bulb)).font(.system(size: 12)).lineLimit(1)
+                if !bulb.online {
+                    Text("Offline").font(.system(size: 10)).foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 8)
+            if bulb.dimmable {
+                LevelSlider(
+                    value: bulb.dimming,
+                    color: bulb.on ? Kelvin.color(bulb.temp) : Color.primary.opacity(0.18),
+                    height: 20, showsLabel: false,
+                    onChange: { store.apply([bulb.id], ["state": true, "dimming": $0], send: false) },
+                    onCommit: { store.apply([bulb.id], ["state": true, "dimming": $0]) })
+                    .frame(width: 120)
+            }
+        }
+        .opacity(bulb.online ? 1 : 0.5)
+        .contextMenu {
+            Button("Blink") { store.blink(bulb.id) }
+        }
+    }
+}
