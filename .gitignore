@@ -1,6 +1,7 @@
 .build/
 .swiftpm/
 *.xcodeproj/
+build.noindex/
 WizBar.app/
 *.zip
 .DS_Store

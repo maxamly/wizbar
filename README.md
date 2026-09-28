@@ -43,8 +43,8 @@ You need Xcode 26 or later.
 ```bash
 git clone https://github.com/maxamly/wizbar.git
 cd wizbar
-./build.sh            # or ./build.sh --universal for Apple Silicon + Intel
-open WizBar.app
+./build.sh --install  # builds and installs to /Applications
+# ./build.sh --universal builds for Apple Silicon + Intel into build.noindex/
 ```
 
 `build.sh` signs the app with the first code-signing identity in your keychain, or ad-hoc if you don't have one. Override it with `SIGN_IDENTITY="…" ./build.sh`.
