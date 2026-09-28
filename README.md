@@ -47,7 +47,7 @@ open WizBar.app
 
 `build.sh` signs the app with the first code-signing identity in your keychain, or ad-hoc if you don't have one. Override it with `SIGN_IDENTITY="…" ./build.sh`.
 
-To start WizBar at login, add it in **System Settings → General → Login Items**.
+To start WizBar at login, choose **⋯ → Launch at Login** in the panel.
 
 ## Usage
 

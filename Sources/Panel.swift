@@ -1,3 +1,4 @@
+import ServiceManagement
 import SwiftUI
 
 /// The menu bar popover.
@@ -6,6 +7,7 @@ struct Panel: View {
     @Environment(\.openWindow) private var openWindow
     @State private var toggled: Set<String> = []
     @State private var contentHeight: CGFloat = 0
+    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
 
     private var anyOn: Bool { store.bulbs.contains(where: \.on) }
 
@@ -25,7 +27,10 @@ struct Panel: View {
             .onPreferenceChange(HeightKey.self) { contentHeight = $0 }
         }
         .frame(width: 320)
-        .onAppear { store.scan() }
+        .onAppear {
+            store.scan()
+            launchAtLogin = SMAppService.mainApp.status == .enabled
+        }
     }
 
     private var header: some View {
@@ -45,6 +50,12 @@ struct Panel: View {
                     }
                     Menu {
                         Button("Set Up Rooms…", action: openSetup)
+                        Toggle("Launch at Login", isOn: Binding(
+                            get: { launchAtLogin },
+                            set: { enable in
+                                try? enable ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister()
+                                launchAtLogin = SMAppService.mainApp.status == .enabled
+                            }))
                         Divider()
                         Button("Quit WizBar") { NSApp.terminate(nil) }.keyboardShortcut("q")
                     } label: {
