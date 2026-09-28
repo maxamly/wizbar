@@ -19,6 +19,13 @@ mkdir -p "$APP/Contents/MacOS"
 cp "$BIN_DIR/WizBar" "$APP/Contents/MacOS/"
 cp Info.plist "$APP/Contents/"
 
+# Compile the Icon Composer icon (Liquid Glass Assets.car + AppIcon.icns fallback).
+mkdir -p "$APP/Contents/Resources"
+xcrun actool Icon/AppIcon.icon --compile "$APP/Contents/Resources" \
+  --platform macosx --target-device mac --minimum-deployment-target 26.0 \
+  --app-icon AppIcon --output-partial-info-plist "$(mktemp -d)/icon.plist" \
+  --errors --warnings --output-format human-readable-text >/dev/null
+
 IDENTITY=${SIGN_IDENTITY:-$(security find-identity -v -p codesigning | awk -F'"' 'NR==1 {print $2}')}
 codesign --force --sign "${IDENTITY:--}" "$APP"
 echo "Built $APP ($(lipo -archs "$APP/Contents/MacOS/WizBar"), signed: ${IDENTITY:-ad-hoc})"

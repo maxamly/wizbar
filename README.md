@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/icon.png" width="128" alt="WizBar icon"></p>
+
 # WizBar
 
 A tiny macOS menu bar app for controlling [WiZ](https://www.wizconnected.com) smart bulbs over your local network. It needs no cloud or account, and nothing leaves your Wi-Fi.
@@ -78,6 +80,7 @@ WiZ bulbs accept JSON commands over UDP on port `38899`. WizBar sends `getPilot`
 | `Sources/Panel.swift` | Menu bar panel |
 | `Sources/Setup.swift` | Room setup window |
 | `Sources/Controls.swift` | Sliders, buttons, color-temperature colors |
+| `Icon/AppIcon.icon` | App icon; open it in Icon Composer to edit |
 
 ## Contributing
 
