@@ -49,7 +49,7 @@ struct Panel: View {
             Spacer()
             GlassEffectContainer(spacing: 6) {
                 HStack(spacing: 6) {
-                    IconButton(symbol: "arrow.clockwise", help: "Refresh", spinning: store.scanning) { store.scan() }
+                    IconButton(symbol: "arrow.trianglehead.2.clockwise", help: "Refresh", spinning: store.scanning) { store.scan() }
                     if !store.bulbs.isEmpty {
                         IconButton(symbol: "power", help: anyOn ? "Turn everything off" : "Turn everything on") {
                             store.apply(store.bulbs.map(\.id), ["state": !anyOn])
@@ -69,11 +69,12 @@ struct Panel: View {
                     } label: {
                         Image(systemName: "ellipsis")
                             .font(.system(size: 12, weight: .semibold))
-                            .frame(width: 16, height: 16)
+                            .glassCircle()
                     }
-                    .menuStyle(.borderlessButton)
+                    .menuStyle(.button)
+                    .buttonStyle(.plain)
                     .menuIndicator(.hidden)
-                    .frame(width: 26, height: 26)
+                    .fixedSize()
                     .glassEffect(.regular.interactive(), in: .circle)
                 }
             }

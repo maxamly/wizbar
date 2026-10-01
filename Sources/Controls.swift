@@ -131,14 +131,26 @@ struct IconButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 12, weight: .semibold))
-                .symbolEffect(.rotate, options: .repeat(.continuous), isActive: spinning)
-                .frame(width: 16, height: 16)
+            // Rotating the image inside a fixed square keeps the spin centered;
+            // symmetric symbols (like the two-arrow refresh) don't wobble.
+            TimelineView(.animation(paused: !spinning)) { context in
+                Image(systemName: symbol)
+                    .font(.system(size: 12, weight: .semibold))
+                    .rotationEffect(.degrees(spinning ? context.date.timeIntervalSinceReferenceDate
+                        .truncatingRemainder(dividingBy: 1) * 360 : 0))
+            }
+            .glassCircle()
         }
-        .buttonStyle(.glass)
-        .buttonBorderShape(.circle)
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: .circle)
         .help(help)
+    }
+}
+
+extension View {
+    /// The fixed, centered 28-pt hit area shared by every header button.
+    func glassCircle() -> some View {
+        frame(width: 28, height: 28).contentShape(Circle())
     }
 }
 
