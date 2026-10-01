@@ -12,6 +12,12 @@ struct Panel: View {
 
     private var anyOn: Bool { store.bulbs.contains(where: \.on) }
 
+    /// Grow with the content and only scroll when the panel would run off the screen
+    /// (visible height minus the header and the gap below the menu bar).
+    private var maxScrollHeight: CGFloat {
+        (NSScreen.main?.visibleFrame.height ?? 800) - 110
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -24,7 +30,7 @@ struct Panel: View {
                     .padding(.bottom, 12)
                     .background(GeometryReader { Color.clear.preference(key: HeightKey.self, value: $0.size.height) })
             }
-            .frame(height: min(max(contentHeight, 80), 560))
+            .frame(height: min(max(contentHeight, 80), maxScrollHeight))
             .onPreferenceChange(HeightKey.self) { contentHeight = $0 }
         }
         .frame(width: 320)
