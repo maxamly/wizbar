@@ -4,6 +4,7 @@ import SwiftUI
 @main
 struct WizBarApp: App {
     @StateObject private var store = Store()
+    @StateObject private var updater = Updater()
 
     init() {
         // For scripted installs: `open -a WizBar --args --enable-launch-at-login`
@@ -14,7 +15,7 @@ struct WizBarApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            Panel().environmentObject(store)
+            Panel().environmentObject(store).environmentObject(updater)
         } label: {
             Image(systemName: store.bulbs.contains(where: \.on) ? "lightbulb.fill" : "lightbulb")
         }

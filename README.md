@@ -18,6 +18,7 @@ A tiny macOS menu bar app for controlling [WiZ](https://www.wizconnected.com) sm
 - **Brightness and warm/cool white** sliders for each room or each light.
 - **Presets:** Night, Relax, Read, Focus.
 - **Blink to identify.** It flashes a bulb so you know which one you're naming.
+- **Updates itself.** It checks GitHub for new releases and installs them in one click.
 - Built with Liquid Glass. About 1 MB, native SwiftUI, with no dependencies.
 - Requires macOS 26 (Tahoe) or later.
 
@@ -51,6 +52,10 @@ cd wizbar
 
 To start WizBar at login, choose **⋯ → Launch at Login** in the panel.
 
+### Updates
+
+WizBar checks this repo's GitHub Releases once a day. When a new version is out, the panel shows it with an **Install** button: WizBar downloads the release, verifies its checksum and code signature, replaces itself and relaunches. You can also choose **⋯ → Check for Updates…**. Release builds are signed ad-hoc, so macOS may ask for Local Network access again after an update.
+
 ## Usage
 
 1. Click the 💡 in the menu bar.
@@ -80,6 +85,7 @@ WiZ bulbs accept JSON commands over UDP on port `38899`. WizBar sends `getPilot`
 | `Sources/Panel.swift` | Menu bar panel |
 | `Sources/Setup.swift` | Room setup window |
 | `Sources/Controls.swift` | Sliders, buttons, color-temperature colors |
+| `Sources/Updater.swift` | Checks GitHub Releases and installs updates |
 | `Icon/AppIcon.icon` | App icon; open it in Icon Composer to edit |
 
 ## Contributing

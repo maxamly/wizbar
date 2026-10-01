@@ -4,6 +4,7 @@ import SwiftUI
 /// The menu bar popover.
 struct Panel: View {
     @EnvironmentObject var store: Store
+    @EnvironmentObject var updater: Updater
     @Environment(\.openWindow) private var openWindow
     @State private var toggled: Set<String> = []
     @State private var contentHeight: CGFloat = 0
@@ -50,6 +51,7 @@ struct Panel: View {
                     }
                     Menu {
                         Button("Set Up Rooms…", action: openSetup)
+                        Button("Check for Updates…") { Task { await updater.check(manual: true) } }
                         Toggle("Launch at Login", isOn: Binding(
                             get: { launchAtLogin },
                             set: { enable in
@@ -80,6 +82,7 @@ struct Panel: View {
 
     @ViewBuilder private var content: some View {
         VStack(spacing: 10) {
+            updateBanner
             if store.bulbs.isEmpty {
                 emptyState
             } else {
@@ -97,6 +100,56 @@ struct Panel: View {
         return Binding(
             get: { toggled.contains(room.id) != byDefault },
             set: { if $0 != byDefault { toggled.insert(room.id) } else { toggled.remove(room.id) } })
+    }
+
+    @ViewBuilder private var updateBanner: some View {
+        switch updater.state {
+        case .idle:
+            EmptyView()
+        case .checking:
+            banner("arrow.triangle.2.circlepath", .secondary, "Checking for updates…", nil) {
+                ProgressView().controlSize(.small)
+            }
+        case .upToDate:
+            banner("checkmark.circle.fill", .green, "You're up to date", "WizBar \(updater.currentVersion)") { EmptyView() }
+        case .available(let version):
+            banner("arrow.down.circle.fill", .blue, "WizBar \(version) is available", "You have \(updater.currentVersion)") {
+                Button("Install") { Task { await updater.install() } }
+                    .buttonStyle(.glassProminent)
+                    .controlSize(.small)
+            }
+        case .installing:
+            banner("arrow.down.circle.fill", .blue, "Installing update…", "WizBar will relaunch") {
+                ProgressView().controlSize(.small)
+            }
+        case .failed(let message):
+            banner("exclamationmark.triangle.fill", .orange, "Update failed", message) {
+                Button("Retry") { Task { await updater.check(manual: true) } }
+                    .buttonStyle(.glass)
+                    .controlSize(.small)
+            }
+        }
+    }
+
+    private func banner(_ icon: String, _ tint: Color, _ title: String, _ subtitle: String?,
+                        @ViewBuilder trailing: () -> some View) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 20))
+                .foregroundStyle(tint)
+                .frame(width: 32, height: 32)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.system(size: 12, weight: .semibold))
+                if let subtitle {
+                    Text(subtitle).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2)
+                }
+            }
+            Spacer(minLength: 8)
+            trailing()
+        }
+        .padding(10)
+        .glassEffect(.regular, in: cardShape)
+        .transition(.blurReplace)
     }
 
     private var setupHint: some View {
