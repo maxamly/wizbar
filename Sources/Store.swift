@@ -72,6 +72,7 @@ struct Room: Identifiable {
     var id: String { name }
     var ids: [String] { bulbs.map(\.id) }
     var isOn: Bool { bulbs.contains(where: \.on) }
+    var online: Bool { bulbs.contains(where: \.online) }
     var onCount: Int { bulbs.filter(\.on).count }
     var dimmable: Bool { bulbs.contains(where: \.dimmable) }
 
@@ -138,6 +139,24 @@ final class Store: ObservableObject {
         config.roomOf = config.roomOf.filter { $0.value != name }
     }
 
+    /// Renames a room and keeps its lights in it. Returns false if the name is empty or taken.
+    @discardableResult
+    func renameRoom(_ old: String, to new: String) -> Bool {
+        let new = new.trimmingCharacters(in: .whitespaces)
+        guard !new.isEmpty, let i = config.rooms.firstIndex(of: old) else { return false }
+        if new == old { return true }
+        guard !config.rooms.contains(new) else { return false }
+        config.rooms[i] = new
+        config.roomOf = config.roomOf.mapValues { $0 == old ? new : $0 }
+        return true
+    }
+
+    /// Moves a room one place earlier (-1) or later (+1) in the panel order.
+    func moveRoom(_ name: String, by offset: Int) {
+        guard let i = config.rooms.firstIndex(of: name), config.rooms.indices.contains(i + offset) else { return }
+        config.rooms.swapAt(i, i + offset)
+    }
+
     // MARK: Network
 
     /// Refreshes state from the network. Bulbs that don't answer are kept but marked offline.
@@ -168,9 +187,9 @@ final class Store: ObservableObject {
         }
     }
 
-    /// Applies `setPilot` params to the local model and, unless `send` is false (mid-drag), to the bulbs.
+    /// Applies `setPilot` params to the local model and the bulbs.
     /// Params each bulb can't handle are dropped or clamped to its range.
-    func apply(_ ids: [String], _ params: [String: Any], send: Bool = true) {
+    func apply(_ ids: [String], _ params: [String: Any]) {
         for id in ids {
             guard let i = bulbs.firstIndex(where: { $0.id == id }), let p = bulbs[i].supported(params) else { continue }
             if let v = p["state"] as? Bool { bulbs[i].on = v }
@@ -180,11 +199,30 @@ final class Store: ObservableObject {
                 bulbs[i].scene = 0
                 bulbs[i].rgb = nil
             }
-            guard send else { continue }
-            let ip = bulbs[i].ip
-            DispatchQueue.global().async {
+            send(p, to: bulbs[i].ip)
+        }
+    }
+
+    /// Latest unsent params per bulb IP, and the IPs with a request in flight.
+    private var pending: [String: [String: Any]] = [:]
+    private var inFlight: Set<String> = []
+
+    /// Keeps one request in flight per bulb and coalesces anything newer into the next one,
+    /// so slider drags update the lights live without flooding them or arriving out of order.
+    private func send(_ params: [String: Any], to ip: String) {
+        pending[ip, default: [:]].merge(params) { $1 }
+        if !inFlight.contains(ip) { flush(ip) }
+    }
+
+    private func flush(_ ip: String) {
+        guard let params = pending.removeValue(forKey: ip) else { inFlight.remove(ip); return }
+        inFlight.insert(ip)
+        DispatchQueue.global().async {
+            let ok = Self.setPilot(ip, params)
+            DispatchQueue.main.async {
                 // No reply or an error means our local state may be wrong: resync.
-                if !Self.setPilot(ip, p) { DispatchQueue.main.async { self.scan() } }
+                if !ok { self.scan() }
+                self.flush(ip)
             }
         }
     }

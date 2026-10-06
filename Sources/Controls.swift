@@ -11,6 +11,15 @@ enum Kelvin {
         let (a, b, u) = t < 0.5 ? (warm, mid, t * 2) : (mid, cool, (t - 0.5) * 2)
         return Color(red: a.0 + (b.0 - a.0) * u, green: a.1 + (b.1 - a.1) * u, blue: a.2 + (b.2 - a.2) * u)
     }
+
+    /// Plain-language name for a temperature, for VoiceOver.
+    static func describe(_ k: Double) -> String {
+        switch k {
+        case ..<3000: "warm white"
+        case ..<4500: "neutral white"
+        default: "cool white"
+        }
+    }
 }
 
 /// Round Liquid Glass power button, tinted and glowing in the light's color when on.
@@ -18,6 +27,9 @@ struct Orb: View {
     let on: Bool
     let color: Color
     var size: CGFloat = 34
+    /// What the button switches, for VoiceOver and the tooltip (e.g. "Bedroom").
+    let name: String
+    var enabled = true
     let action: () -> Void
 
     var body: some View {
@@ -30,9 +42,14 @@ struct Orb: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .glassEffect(.regular.interactive(), in: .circle)
+        .glassEffect(.regular.interactive(enabled), in: .circle)
         .shadow(color: on ? color.opacity(0.6) : .clear, radius: size * 0.25)
         .animation(.easeOut(duration: 0.2), value: on)
+        .disabled(!enabled)
+        .help(on ? "Turn off \(name)" : "Turn on \(name)")
+        .accessibilityLabel(name)
+        .accessibilityValue(on ? "On" : "Off")
+        .accessibilityAddTraits(.isToggle)
     }
 }
 
@@ -40,13 +57,15 @@ struct Orb: View {
 let cardShape = ConcentricRectangle(corners: .concentric(minimum: 18), isUniform: true)
 
 /// Pill-shaped brightness control (10–100%), in the style of Control Center.
+/// Reports every new value while dragging; the store coalesces them into live updates.
 struct LevelSlider: View {
     let value: Double
     let color: Color
     var height: CGFloat = 26
     var showsLabel = true
     let onChange: (Int) -> Void
-    let onCommit: (Int) -> Void
+
+    private var level: Int { Int(value.rounded()) }
 
     var body: some View {
         GeometryReader { geo in
@@ -60,23 +79,34 @@ struct LevelSlider: View {
                         .foregroundStyle(.black.opacity(0.45))
                     Spacer()
                     if showsLabel {
-                        Text("\(Int(value.rounded()))%")
+                        Text("\(level)%")
                             .font(.system(size: 11, weight: .semibold).monospacedDigit())
                             .foregroundStyle(fraction > 0.85 ? AnyShapeStyle(.black.opacity(0.5)) : AnyShapeStyle(.secondary))
+                            .contentTransition(.numericText(value: value))
                     }
                 }
                 .padding(.horizontal, height * 0.3)
             }
             .contentShape(Capsule())
-            .gesture(DragGesture(minimumDistance: 0)
-                .onChanged { onChange(level(at: $0.location.x, geo.size.width)) }
-                .onEnded { onCommit(level(at: $0.location.x, geo.size.width)) })
+            .gesture(DragGesture(minimumDistance: 0).onChanged { update(at: $0.location.x, geo.size.width) })
         }
         .frame(height: height)
+        .sensoryFeedback(.alignment, trigger: level == 10 || level == 100) { _, atEnd in atEnd }
+        .accessibilityElement()
+        .accessibilityLabel("Brightness")
+        .accessibilityValue("\(level)%")
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: onChange(min(level + 10, 100))
+            case .decrement: onChange(max(level - 10, 10))
+            @unknown default: break
+            }
+        }
     }
 
-    private func level(at x: CGFloat, _ width: CGFloat) -> Int {
-        Int((10 + 90 * min(max(x / width, 0), 1)).rounded())
+    private func update(at x: CGFloat, _ width: CGFloat) {
+        let new = Int((10 + 90 * min(max(x / width, 0), 1)).rounded())
+        if new != level { onChange(new) }
     }
 }
 
@@ -87,9 +117,9 @@ struct TempSlider: View {
     let range: ClosedRange<Double>
     var height: CGFloat = 26
     let onChange: (Int) -> Void
-    let onCommit: (Int) -> Void
 
     private var span: Double { range.upperBound - range.lowerBound }
+    private var current: Int { Int((kelvin / 50).rounded() * 50) }
 
     var body: some View {
         GeometryReader { geo in
@@ -109,16 +139,26 @@ struct TempSlider: View {
                     .offset(x: 3 + (geo.size.width - knob - 6) * CGFloat(fraction))
             }
             .contentShape(Capsule())
-            .gesture(DragGesture(minimumDistance: 0)
-                .onChanged { onChange(kelvin(at: $0.location.x, geo.size.width)) }
-                .onEnded { onCommit(kelvin(at: $0.location.x, geo.size.width)) })
+            .gesture(DragGesture(minimumDistance: 0).onChanged { update(at: $0.location.x, geo.size.width) })
         }
         .frame(height: height)
+        .sensoryFeedback(.alignment, trigger: kelvin <= range.lowerBound || kelvin >= range.upperBound) { _, atEnd in atEnd }
+        .accessibilityElement()
+        .accessibilityLabel("Color temperature")
+        .accessibilityValue("\(current) K, \(Kelvin.describe(kelvin))")
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: onChange(Int(min(Double(current + 250), range.upperBound)))
+            case .decrement: onChange(Int(max(Double(current - 250), range.lowerBound)))
+            @unknown default: break
+            }
+        }
     }
 
-    private func kelvin(at x: CGFloat, _ width: CGFloat) -> Int {
+    private func update(at x: CGFloat, _ width: CGFloat) {
         let k = range.lowerBound + span * min(max(x / width, 0), 1)
-        return Int((k / 50).rounded() * 50)
+        let new = Int((k / 50).rounded() * 50)
+        if new != current { onChange(new) }
     }
 }
 
@@ -128,22 +168,26 @@ struct IconButton: View {
     let help: String
     var spinning = false
     let action: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button(action: action) {
             // Rotating the image inside a fixed square keeps the spin centered;
             // symmetric symbols (like the two-arrow refresh) don't wobble.
-            TimelineView(.animation(paused: !spinning)) { context in
+            // With Reduce Motion, a gentle pulse replaces the spin.
+            TimelineView(.animation(paused: !spinning || reduceMotion)) { context in
                 Image(systemName: symbol)
                     .font(.system(size: 12, weight: .semibold))
-                    .rotationEffect(.degrees(spinning ? context.date.timeIntervalSinceReferenceDate
+                    .rotationEffect(.degrees(spinning && !reduceMotion ? context.date.timeIntervalSinceReferenceDate
                         .truncatingRemainder(dividingBy: 1) * 360 : 0))
+                    .symbolEffect(.pulse, isActive: spinning && reduceMotion)
             }
             .glassCircle()
         }
         .buttonStyle(.plain)
         .glassEffect(.regular.interactive(), in: .circle)
         .help(help)
+        .accessibilityLabel(help)
     }
 }
 

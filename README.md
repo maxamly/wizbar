@@ -59,8 +59,11 @@ WizBar checks this repo's GitHub Releases once a day. When a new version is out,
 ## Usage
 
 1. Click the 💡 in the menu bar.
-2. Choose **⋯ → Set Up Rooms…**, or click the *Group lights by room* card.
+2. Choose **⋯ → Set Up Lights…** (⌘,), or click the *Group lights by room* card.
 3. Add your rooms. Then, for each light, press **Blink**, give it a name and pick its room.
+4. Right-click a room to rename it or change its place in the panel.
+
+Click a room's name to show presets and its individual lights. Sliders change the lights as you drag. ⌘R rescans the network.
 
 Names and rooms are stored locally in the app's preferences.
 

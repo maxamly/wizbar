@@ -30,6 +30,7 @@ struct Panel: View {
                     .padding(.bottom, 12)
                     .background(GeometryReader { Color.clear.preference(key: HeightKey.self, value: $0.size.height) })
             }
+            .scrollBounceBehavior(.basedOnSize)
             .frame(height: min(max(contentHeight, 80), maxScrollHeight))
             .onPreferenceChange(HeightKey.self) { contentHeight = $0 }
         }
@@ -50,21 +51,18 @@ struct Panel: View {
             GlassEffectContainer(spacing: 6) {
                 HStack(spacing: 6) {
                     IconButton(symbol: "arrow.trianglehead.2.clockwise", help: "Refresh", spinning: store.scanning) { store.scan() }
+                        .keyboardShortcut("r")
                     if !store.bulbs.isEmpty {
                         IconButton(symbol: "power", help: anyOn ? "Turn everything off" : "Turn everything on") {
                             store.apply(store.bulbs.map(\.id), ["state": !anyOn])
                         }
                     }
                     Menu {
-                        Button("Set Up Rooms…", action: openSetup)
+                        Button("Set Up Lights…", action: openSetup).keyboardShortcut(",")
                         Button("Check for Updates…") { Task { await updater.check(manual: true) } }
-                        Toggle("Launch at Login", isOn: Binding(
-                            get: { launchAtLogin },
-                            set: { enable in
-                                try? enable ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister()
-                                launchAtLogin = SMAppService.mainApp.status == .enabled
-                            }))
+                        Toggle("Launch at Login", isOn: Binding(get: { launchAtLogin }, set: setLaunchAtLogin))
                         Divider()
+                        Text("WizBar \(updater.currentVersion)")
                         Button("Quit WizBar") { NSApp.terminate(nil) }.keyboardShortcut("q")
                     } label: {
                         Image(systemName: "ellipsis")
@@ -76,9 +74,18 @@ struct Panel: View {
                     .menuIndicator(.hidden)
                     .fixedSize()
                     .glassEffect(.regular.interactive(), in: .circle)
+                    .help("More")
+                    .accessibilityLabel("More")
                 }
             }
         }
+    }
+
+    private func setLaunchAtLogin(_ enable: Bool) {
+        try? enable ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister()
+        // If the login item is switched off in System Settings, registering needs the user's approval there.
+        if SMAppService.mainApp.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
+        launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 
     private var summary: String {
@@ -193,7 +200,10 @@ struct Panel: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-                Button("Search Again") { store.scan() }.controlSize(.small).padding(.top, 2)
+                Button("Search Again") { store.scan() }
+                    .buttonStyle(.glass)
+                    .controlSize(.small)
+                    .padding(.top, 2)
             }
         }
         .frame(maxWidth: .infinity)
@@ -225,84 +235,112 @@ struct RoomCard: View {
     ]
 
     private var color: Color { room.isOn ? Kelvin.color(room.temp) : Color.primary.opacity(0.18) }
+    /// Presets and per-light rows; without either there's nothing to expand.
+    private var hasDetails: Bool { room.dimmable || room.bulbs.count > 1 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                Orb(on: room.isOn, color: Kelvin.color(room.temp)) {
+                Orb(on: room.isOn, color: Kelvin.color(room.temp), name: room.name, enabled: room.online) {
                     store.apply(room.ids, ["state": !room.isOn])
                 }
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(room.name).font(.system(size: 13, weight: .semibold))
-                    Text(status).font(.system(size: 11)).foregroundStyle(.secondary)
-                }
-                Spacer()
+                // The whole title row expands the card, not just the chevron.
                 Button {
                     withAnimation(.snappy(duration: 0.25)) { expanded.toggle() }
                 } label: {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .rotationEffect(.degrees(expanded ? 90 : 0))
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-
-            if room.dimmable {
-                LevelSlider(
-                    value: room.dimming, color: color,
-                    onChange: { store.apply(room.ids, ["state": true, "dimming": $0], send: false) },
-                    onCommit: { store.apply(room.ids, ["state": true, "dimming": $0]) })
-            }
-            if let range = room.kelvinRange {
-                TempSlider(
-                    kelvin: room.temp, range: range,
-                    onChange: { store.apply(room.ids, ["state": true, "temp": $0], send: false) },
-                    onCommit: { store.apply(room.ids, ["state": true, "temp": $0]) })
-            }
-
-            if expanded, room.dimmable {
-                GlassEffectContainer(spacing: 6) {
-                    HStack(spacing: 6) {
-                        ForEach(Self.presets, id: \.name) { p in
-                            Button {
-                                store.apply(room.ids, ["state": true, "temp": p.temp, "dimming": p.dimming])
-                            } label: {
-                                VStack(spacing: 3) {
-                                    Image(systemName: p.icon).font(.system(size: 12))
-                                    Text(p.name).font(.system(size: 10, weight: .medium))
-                                }
-                                .foregroundStyle(.primary.opacity(0.8))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 7)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 12))
+                    HStack {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(room.name).font(.system(size: 13, weight: .semibold))
+                            Text(status).font(.system(size: 11)).foregroundStyle(.secondary)
+                                .contentTransition(.numericText())
+                        }
+                        Spacer()
+                        if hasDetails {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                                .rotationEffect(.degrees(expanded ? 90 : 0))
+                                .frame(width: 28, height: 28)
                         }
                     }
+                    .contentShape(Rectangle())
                 }
-                .transition(.blurReplace)
+                .buttonStyle(.plain)
+                .disabled(!hasDetails)
+                .accessibilityLabel(room.name)
+                .accessibilityValue(status)
+                .accessibilityHint(expanded ? "Collapse" : "Expand")
             }
 
-            if expanded, room.bulbs.count > 1 {
-                VStack(spacing: 8) {
-                    ForEach(room.bulbs) { BulbRow(bulb: $0) }
+            Group {
+                if room.dimmable {
+                    LevelSlider(value: room.dimming, color: color) {
+                        store.apply(room.ids, ["state": true, "dimming": $0])
+                    }
                 }
-                .padding(.top, 2)
-                .transition(.blurReplace)
+                if let range = room.kelvinRange {
+                    TempSlider(kelvin: room.temp, range: range) {
+                        store.apply(room.ids, ["state": true, "temp": $0])
+                    }
+                }
+
+                if expanded, room.dimmable {
+                    GlassEffectContainer(spacing: 6) {
+                        HStack(spacing: 6) {
+                            ForEach(Self.presets, id: \.name) { preset($0) }
+                        }
+                    }
+                    .transition(.blurReplace)
+                }
+
+                if expanded, room.bulbs.count > 1 {
+                    VStack(spacing: 8) {
+                        ForEach(room.bulbs) { BulbRow(bulb: $0) }
+                    }
+                    .padding(.top, 2)
+                    .transition(.blurReplace)
+                }
             }
+            .disabled(!room.online)
         }
         .padding(12)
         .glassEffect(room.isOn ? .regular.tint(Kelvin.color(room.temp).opacity(0.3)) : .regular, in: cardShape)
+        .opacity(room.online ? 1 : 0.55)
         .animation(.easeOut(duration: 0.2), value: room.isOn)
+    }
+
+    private func preset(_ p: (name: String, icon: String, temp: Int, dimming: Int)) -> some View {
+        let active = isActive(p)
+        return Button {
+            store.apply(room.ids, ["state": true, "temp": p.temp, "dimming": p.dimming])
+        } label: {
+            VStack(spacing: 3) {
+                Image(systemName: p.icon).font(.system(size: 12))
+                Text(p.name).font(.system(size: 10, weight: .medium))
+            }
+            .foregroundStyle(active ? AnyShapeStyle(.black.opacity(0.65)) : AnyShapeStyle(.primary.opacity(0.8)))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 7)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .glassEffect(active ? .regular.tint(Kelvin.color(room.temp)).interactive() : .regular.interactive(),
+                     in: .rect(cornerRadius: 12))
+        .accessibilityLabel(p.name)
+        .accessibilityAddTraits(active ? .isSelected : [])
+    }
+
+    /// A preset is active when the lit bulbs match it (after clamping to what they support).
+    private func isActive(_ p: (name: String, icon: String, temp: Int, dimming: Int)) -> Bool {
+        guard room.isOn, abs(room.dimming - Double(p.dimming)) < 1 else { return false }
+        guard let range = room.kelvinRange else { return true }
+        return abs(room.temp - min(max(Double(p.temp), range.lowerBound), range.upperBound)) < 50
     }
 
     private var status: String {
         let n = room.bulbs.count
         let lights = n == 1 ? "1 light" : "\(n) lights"
+        if !room.online { return "Offline · \(lights)" }
         if room.onCount == 0 { return "Off · \(lights)" }
         if room.onCount == n { return "On · \(lights)" }
         return "\(room.onCount) of \(n) on"
@@ -315,7 +353,7 @@ struct BulbRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Orb(on: bulb.on, color: Kelvin.color(bulb.temp), size: 24) {
+            Orb(on: bulb.on, color: Kelvin.color(bulb.temp), size: 24, name: store.name(bulb), enabled: bulb.online) {
                 store.apply([bulb.id], ["state": !bulb.on])
             }
             VStack(alignment: .leading, spacing: 0) {
@@ -329,15 +367,15 @@ struct BulbRow: View {
                 LevelSlider(
                     value: bulb.dimming,
                     color: bulb.on ? Kelvin.color(bulb.temp) : Color.primary.opacity(0.18),
-                    height: 20, showsLabel: false,
-                    onChange: { store.apply([bulb.id], ["state": true, "dimming": $0], send: false) },
-                    onCommit: { store.apply([bulb.id], ["state": true, "dimming": $0]) })
-                    .frame(width: 120)
+                    height: 20, showsLabel: false
+                ) { store.apply([bulb.id], ["state": true, "dimming": $0]) }
+                .frame(width: 120)
+                .disabled(!bulb.online)
             }
         }
         .opacity(bulb.online ? 1 : 0.5)
         .contextMenu {
-            Button("Blink") { store.blink(bulb.id) }
+            Button("Blink") { store.blink(bulb.id) }.disabled(!bulb.online)
         }
     }
 }
