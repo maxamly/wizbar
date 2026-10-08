@@ -6,7 +6,6 @@ struct Bulb: Identifiable {
     var on: Bool
     var dimming: Double
     var temp: Double
-    /// Active scene (0 = none) and RGB color, so blink can put the bulb back exactly as it was.
     var scene: Int
     var rgb: [Int]?
     var dimmable = true
@@ -32,7 +31,6 @@ struct Bulb: Identifiable {
         kelvin = caps.kelvin
     }
 
-    /// Drops or clamps params this device doesn't support; nil if nothing is left to send.
     func supported(_ params: [String: Any]) -> [String: Any]? {
         var p = params
         if !dimmable { p["dimming"] = nil }
@@ -42,7 +40,6 @@ struct Bulb: Identifiable {
         return p.isEmpty ? nil : p
     }
 
-    /// setPilot params that recreate the current state.
     var restoreParams: [String: Any] {
         guard on else { return ["state": false] }
         var p: [String: Any] = ["state": true]
@@ -58,7 +55,6 @@ struct Bulb: Identifiable {
     }
 }
 
-/// User-defined names and rooms, persisted in UserDefaults. Keyed by bulb MAC.
 struct Config: Codable {
     var names: [String: String] = [:]
     var rooms: [String] = []
@@ -76,14 +72,12 @@ struct Room: Identifiable {
     var onCount: Int { bulbs.filter(\.on).count }
     var dimmable: Bool { bulbs.contains(where: \.dimmable) }
 
-    /// Widest white range across the room; each bulb clamps to its own range when sent.
     var kelvinRange: ClosedRange<Double>? {
         let ranges = bulbs.compactMap(\.kelvin)
         guard let lo = ranges.map(\.lowerBound).min(), let hi = ranges.map(\.upperBound).max() else { return nil }
         return lo...hi
     }
 
-    /// Averages over the lit bulbs, so an off bulb doesn't drag the numbers down.
     private var relevant: [Bulb] { isOn ? bulbs.filter(\.on) : bulbs }
     var dimming: Double { average(relevant.filter(\.dimmable).map(\.dimming), or: 100) }
     var temp: Double { average(relevant.filter { $0.kelvin != nil }.map(\.temp), or: 4000) }
@@ -102,16 +96,26 @@ final class Store: ObservableObject {
     }
 
     private static let configKey = "config"
-    /// Device capabilities by MAC; fetched once per session.
-    private var capabilities: [String: Wiz.Capabilities] = [:]
+    private static let capabilitiesKey = "capabilities"
+    private var capabilities: [String: Wiz.Capabilities] {
+        didSet { if let data = try? JSONEncoder().encode(capabilities) { UserDefaults.standard.set(data, forKey: Self.capabilitiesKey) } }
+    }
+    private var fetchingCapabilities: Set<String> = []
+    // Network state is ignored briefly after a local change so stale replies don't move sliders.
+    private var lastLocalChange: [String: Date] = [:]
+    private var lastHeard: [String: Date] = [:]
+    private var heardThisScan: Set<String> = []
+    private var pushing = false
+    private var pushers: Set<String> = []
 
     init() {
         config = UserDefaults.standard.data(forKey: Self.configKey)
             .flatMap { try? JSONDecoder().decode(Config.self, from: $0) } ?? Config()
+        capabilities = UserDefaults.standard.data(forKey: Self.capabilitiesKey)
+            .flatMap { try? JSONDecoder().decode([String: Wiz.Capabilities].self, from: $0) } ?? [:]
         scan()
+        startPush()
     }
-
-    // MARK: Naming & rooms
 
     func defaultName(_ bulb: Bulb) -> String { "Light " + bulb.mac.suffix(4).uppercased() }
     func name(_ bulb: Bulb) -> String { config.names[bulb.id] ?? defaultName(bulb) }
@@ -139,7 +143,6 @@ final class Store: ObservableObject {
         config.roomOf = config.roomOf.filter { $0.value != name }
     }
 
-    /// Renames a room and keeps its lights in it. Returns false if the name is empty or taken.
     @discardableResult
     func renameRoom(_ old: String, to new: String) -> Bool {
         let new = new.trimmingCharacters(in: .whitespaces)
@@ -151,47 +154,101 @@ final class Store: ObservableObject {
         return true
     }
 
-    /// Moves a room one place earlier (-1) or later (+1) in the panel order.
     func moveRoom(_ name: String, by offset: Int) {
         guard let i = config.rooms.firstIndex(of: name), config.rooms.indices.contains(i + offset) else { return }
         config.rooms.swapAt(i, i + offset)
     }
 
-    // MARK: Network
-
-    /// Refreshes state from the network. Bulbs that don't answer are kept but marked offline.
     func scan() {
         guard !scanning else { return }
         scanning = true
-        let known = capabilities
+        heardThisScan = []
+        let targets = Wiz.broadcastAddresses() + bulbs.map(\.ip)
         DispatchQueue.global().async {
-            let found = Wiz.request(["method": "getPilot", "params": [:]], to: Wiz.broadcastAddresses(), timeout: 2)
-                .compactMap { Bulb(ip: $0.key, reply: $0.value) }
-
-            let unknown = found.filter { known[$0.id] == nil }
-            var fetched = [Wiz.Capabilities?](repeating: nil, count: unknown.count)
-            fetched.withUnsafeMutableBufferPointer { out in
-                DispatchQueue.concurrentPerform(iterations: out.count) { out[$0] = Wiz.capabilities(ip: unknown[$0].ip) }
-            }
-
-            DispatchQueue.main.async {
-                for (bulb, caps) in zip(unknown, fetched) { self.capabilities[bulb.id] = caps }
-                var merged = self.bulbs.map { var b = $0; b.online = false; return b }
-                for var bulb in found {
-                    if let caps = self.capabilities[bulb.id] { bulb.apply(caps) }
-                    if let i = merged.firstIndex(where: { $0.id == bulb.id }) { merged[i] = bulb } else { merged.append(bulb) }
+            Wiz.request(["method": "getPilot", "params": [:]], to: targets, timeout: 1.5) { ip, reply in
+                guard let bulb = Bulb(ip: ip, reply: reply) else { return }
+                DispatchQueue.main.async {
+                    self.heardThisScan.insert(bulb.id)
+                    self.received(bulb)
                 }
-                self.bulbs = merged
+            }
+            DispatchQueue.main.async {
+                for i in self.bulbs.indices where !self.heardThisScan.contains(self.bulbs[i].id) {
+                    self.bulbs[i].online = false
+                }
                 self.scanning = false
+                self.registerForPush()
             }
         }
     }
 
-    /// Applies `setPilot` params to the local model and the bulbs.
-    /// Params each bulb can't handle are dropped or clamped to its range.
+    private func received(_ incoming: Bulb) {
+        var bulb = incoming
+        lastHeard[bulb.id] = Date()
+        if let caps = capabilities[bulb.id] { bulb.apply(caps) } else { fetchCapabilities(bulb) }
+        guard let i = bulbs.firstIndex(where: { $0.id == bulb.id }) else { bulbs.append(bulb); return }
+        if isBusy(bulb) {
+            bulbs[i].ip = bulb.ip
+            bulbs[i].online = true
+        } else {
+            bulbs[i] = bulb
+        }
+    }
+
+    private func isBusy(_ bulb: Bulb) -> Bool {
+        if blinking.contains(bulb.id) || pending[bulb.ip] != nil || inFlight.contains(bulb.ip) { return true }
+        return lastLocalChange[bulb.id].map { Date().timeIntervalSince($0) < 1.5 } ?? false
+    }
+
+    private func fetchCapabilities(_ bulb: Bulb) {
+        guard fetchingCapabilities.insert(bulb.id).inserted else { return }
+        DispatchQueue.global().async {
+            let caps = Wiz.capabilities(ip: bulb.ip)
+            DispatchQueue.main.async {
+                self.fetchingCapabilities.remove(bulb.id)
+                guard let caps else { return }
+                self.capabilities[bulb.id] = caps
+                if let i = self.bulbs.firstIndex(where: { $0.id == bulb.id }) { self.bulbs[i].apply(caps) }
+            }
+        }
+    }
+
+    private func startPush() {
+        pushing = Wiz.listen { [weak self] ip, message in
+            guard message["method"] as? String == "syncPilot", let params = message["params"] as? [String: Any],
+                  let bulb = Bulb(ip: ip, reply: ["result": params])
+            else { return }
+            DispatchQueue.main.async {
+                self?.pushers.insert(bulb.id)
+                self?.received(bulb)
+            }
+        }
+        guard pushing else { return }
+        Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.markSilentBulbsOffline()
+            self.registerForPush()
+        }
+    }
+
+    private func registerForPush() {
+        guard pushing else { return }
+        let ips = bulbs.map(\.ip)
+        DispatchQueue.global().async { Wiz.register(ips) }
+    }
+
+    private func markSilentBulbsOffline() {
+        let cutoff = Date().addingTimeInterval(-16)
+        for i in bulbs.indices where bulbs[i].online && pushers.contains(bulbs[i].id)
+            && (lastHeard[bulbs[i].id] ?? .distantPast) < cutoff {
+            bulbs[i].online = false
+        }
+    }
+
     func apply(_ ids: [String], _ params: [String: Any]) {
         for id in ids {
             guard let i = bulbs.firstIndex(where: { $0.id == id }), let p = bulbs[i].supported(params) else { continue }
+            lastLocalChange[id] = Date()
             if let v = p["state"] as? Bool { bulbs[i].on = v }
             if let v = p["dimming"] as? Int { bulbs[i].dimming = Double(v) }
             if let v = p["temp"] as? Int {
@@ -203,12 +260,9 @@ final class Store: ObservableObject {
         }
     }
 
-    /// Latest unsent params per bulb IP, and the IPs with a request in flight.
     private var pending: [String: [String: Any]] = [:]
     private var inFlight: Set<String> = []
 
-    /// Keeps one request in flight per bulb and coalesces anything newer into the next one,
-    /// so slider drags update the lights live without flooding them or arriving out of order.
     private func send(_ params: [String: Any], to ip: String) {
         pending[ip, default: [:]].merge(params) { $1 }
         if !inFlight.contains(ip) { flush(ip) }
@@ -220,14 +274,12 @@ final class Store: ObservableObject {
         DispatchQueue.global().async {
             let ok = Self.setPilot(ip, params)
             DispatchQueue.main.async {
-                // No reply or an error means our local state may be wrong: resync.
                 if !ok { self.scan() }
                 self.flush(ip)
             }
         }
     }
 
-    /// Flashes a bulb a few times so it can be located, then restores its previous state.
     func blink(_ id: String) {
         guard let bulb = bulbs.first(where: { $0.id == id }), !blinking.contains(id) else { return }
         blinking.insert(id)
@@ -243,7 +295,6 @@ final class Store: ObservableObject {
         }
     }
 
-    /// Returns true if the device acknowledged without an error.
     @discardableResult
     private static func setPilot(_ ip: String, _ params: [String: Any], timeout: TimeInterval = 1.2) -> Bool {
         guard let reply = Wiz.request(["id": 1, "method": "setPilot", "params": params], to: [ip],

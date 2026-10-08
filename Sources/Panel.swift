@@ -1,7 +1,6 @@
 import ServiceManagement
 import SwiftUI
 
-/// The menu bar popover.
 struct Panel: View {
     @EnvironmentObject var store: Store
     @EnvironmentObject var updater: Updater
@@ -12,8 +11,6 @@ struct Panel: View {
 
     private var anyOn: Bool { store.bulbs.contains(where: \.on) }
 
-    /// Grow with the content and only scroll when the panel would run off the screen
-    /// (visible height minus the header and the gap below the menu bar).
     private var maxScrollHeight: CGFloat {
         (NSScreen.main?.visibleFrame.height ?? 800) - 110
     }
@@ -83,7 +80,6 @@ struct Panel: View {
 
     private func setLaunchAtLogin(_ enable: Bool) {
         try? enable ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister()
-        // If the login item is switched off in System Settings, registering needs the user's approval there.
         if SMAppService.mainApp.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
@@ -108,7 +104,6 @@ struct Panel: View {
         }
     }
 
-    /// Rooms start collapsed, except the single "All Lights" group before any setup.
     private func expandedBinding(_ room: Room) -> Binding<Bool> {
         let byDefault = store.config.rooms.isEmpty
         return Binding(
@@ -235,7 +230,6 @@ struct RoomCard: View {
     ]
 
     private var color: Color { room.isOn ? Kelvin.color(room.temp) : Color.primary.opacity(0.18) }
-    /// Presets and per-light rows; without either there's nothing to expand.
     private var hasDetails: Bool { room.dimmable || room.bulbs.count > 1 }
 
     var body: some View {
@@ -244,7 +238,6 @@ struct RoomCard: View {
                 Orb(on: room.isOn, color: Kelvin.color(room.temp), name: room.name, enabled: room.online) {
                     store.apply(room.ids, ["state": !room.isOn])
                 }
-                // The whole title row expands the card, not just the chevron.
                 Button {
                     withAnimation(.snappy(duration: 0.25)) { expanded.toggle() }
                 } label: {
@@ -330,7 +323,6 @@ struct RoomCard: View {
         .accessibilityAddTraits(active ? .isSelected : [])
     }
 
-    /// A preset is active when the lit bulbs match it (after clamping to what they support).
     private func isActive(_ p: (name: String, icon: String, temp: Int, dimming: Int)) -> Bool {
         guard room.isOn, abs(room.dimming - Double(p.dimming)) < 1 else { return false }
         guard let range = room.kelvinRange else { return true }

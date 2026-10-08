@@ -2,8 +2,6 @@ import AppKit
 import CryptoKit
 import Foundation
 
-/// Checks GitHub Releases for a newer WizBar and installs it in place with one click.
-/// A release must include `WizBar.zip` and `WizBar.zip.sha256` (the CI workflow uploads both).
 @MainActor
 final class Updater: ObservableObject {
     static let repo = "maxamly/wizbar"
@@ -43,7 +41,6 @@ final class Updater: ObservableObject {
         }
     }
 
-    /// Background checks stay quiet unless an update exists; manual checks also report "up to date" and errors.
     func check(manual: Bool) async {
         if state == .installing { return }
         if manual { state = .checking }
@@ -91,9 +88,6 @@ final class Updater: ObservableObject {
         }
     }
 
-    // MARK: Steps
-
-    /// Downloads and unpacks the release, then checks checksum, bundle ID, version and code signature.
     nonisolated private static func download(_ release: Release) async throws -> URL {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("WizBarUpdate-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -128,7 +122,6 @@ final class Updater: ObservableObject {
         }
     }
 
-    /// Reopens the (now replaced) app from a detached shell once this process has quit.
     private static func relaunch(_ app: URL) {
         let shell = Process()
         shell.executableURL = URL(fileURLWithPath: "/bin/sh")
@@ -148,7 +141,6 @@ final class Updater: ObservableObject {
         }
     }
 
-    /// Numeric comparison of dotted versions; missing parts count as 0 ("1.4" == "1.4.0").
     nonisolated static func compare(_ a: String, _ b: String) -> ComparisonResult {
         let x = a.split(separator: ".").map { Int($0) ?? 0 }
         let y = b.split(separator: ".").map { Int($0) ?? 0 }

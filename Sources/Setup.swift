@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// Window for naming lights and assigning them to rooms.
 struct SetupView: View {
     @EnvironmentObject var store: Store
     @State private var newRoom = ""

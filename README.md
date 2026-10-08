@@ -81,6 +81,8 @@ Names and rooms are stored locally in the app's preferences.
 
 WiZ bulbs accept JSON commands over UDP on port `38899`. WizBar sends `getPilot` to the broadcast address of every active network interface to find bulbs and read their state. It then sends `setPilot` straight to each bulb's IP to change power, brightness (`dimming`) or color temperature (`temp`).
 
+WizBar also sends each bulb a `registration`, renewed every 20 seconds. Bulbs then push `syncPilot` messages to UDP port `38900` whenever their state changes, plus a heartbeat every 5 seconds. Changes made with a wall switch or the WiZ app show up right away, and a bulb that stops sending heartbeats is marked offline.
+
 | File | What's in it |
 |---|---|
 | `Sources/Wiz.swift` | UDP client and broadcast discovery |

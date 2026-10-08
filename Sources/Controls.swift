@@ -4,7 +4,6 @@ enum Kelvin {
     static let range = 2200.0...6500.0
     static let span = range.upperBound - range.lowerBound
 
-    /// Approximate on-screen color of white light at a given temperature.
     static func color(_ k: Double) -> Color {
         let warm = (1.0, 0.64, 0.32), mid = (1.0, 0.87, 0.66), cool = (0.78, 0.87, 1.0)
         let t = min(max((k - range.lowerBound) / span, 0), 1)
@@ -12,7 +11,6 @@ enum Kelvin {
         return Color(red: a.0 + (b.0 - a.0) * u, green: a.1 + (b.1 - a.1) * u, blue: a.2 + (b.2 - a.2) * u)
     }
 
-    /// Plain-language name for a temperature, for VoiceOver.
     static func describe(_ k: Double) -> String {
         switch k {
         case ..<3000: "warm white"
@@ -22,12 +20,10 @@ enum Kelvin {
     }
 }
 
-/// Round Liquid Glass power button, tinted and glowing in the light's color when on.
 struct Orb: View {
     let on: Bool
     let color: Color
     var size: CGFloat = 34
-    /// What the button switches, for VoiceOver and the tooltip (e.g. "Bedroom").
     let name: String
     var enabled = true
     let action: () -> Void
@@ -53,11 +49,8 @@ struct Orb: View {
     }
 }
 
-/// Card shape whose corners follow the enclosing panel's corners (Liquid Glass concentricity).
 let cardShape = ConcentricRectangle(corners: .concentric(minimum: 18), isUniform: true)
 
-/// Pill-shaped brightness control (10–100%), in the style of Control Center.
-/// Reports every new value while dragging; the store coalesces them into live updates.
 struct LevelSlider: View {
     let value: Double
     let color: Color
@@ -110,10 +103,8 @@ struct LevelSlider: View {
     }
 }
 
-/// Warm-to-cool white temperature control over a gradient track.
 struct TempSlider: View {
     let kelvin: Double
-    /// The range the bulbs actually support (e.g. 2700–6500 for tunable-white models).
     let range: ClosedRange<Double>
     var height: CGFloat = 26
     let onChange: (Int) -> Void
@@ -162,7 +153,6 @@ struct TempSlider: View {
     }
 }
 
-/// Circular Liquid Glass icon button used in headers.
 struct IconButton: View {
     let symbol: String
     let help: String
@@ -172,9 +162,7 @@ struct IconButton: View {
 
     var body: some View {
         Button(action: action) {
-            // Rotating the image inside a fixed square keeps the spin centered;
-            // symmetric symbols (like the two-arrow refresh) don't wobble.
-            // With Reduce Motion, a gentle pulse replaces the spin.
+            // Rotating inside a fixed square keeps the spin centered.
             TimelineView(.animation(paused: !spinning || reduceMotion)) { context in
                 Image(systemName: symbol)
                     .font(.system(size: 12, weight: .semibold))
@@ -192,13 +180,11 @@ struct IconButton: View {
 }
 
 extension View {
-    /// The fixed, centered 28-pt hit area shared by every header button.
     func glassCircle() -> some View {
         frame(width: 28, height: 28).contentShape(Circle())
     }
 }
 
-/// Wrapping horizontal layout (for room chips).
 struct Flow: Layout {
     var spacing: CGFloat = 8
 

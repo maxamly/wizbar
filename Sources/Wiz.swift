@@ -1,14 +1,15 @@
 import Darwin
 import Foundation
 
-/// Minimal client for the WiZ local UDP protocol (JSON on port 38899).
 enum Wiz {
     static let port: UInt16 = 38899
 
-    /// Sends `payload` to every host, resending every 0.4s, and collects JSON replies
-    /// (one per IP) until `timeout`. With `expectOne`, returns as soon as any reply arrives.
+    static let pushPort: UInt16 = 38900
+
+    @discardableResult
     static func request(_ payload: [String: Any], to hosts: [String],
-                        timeout: TimeInterval = 1.5, expectOne: Bool = false) -> [String: [String: Any]] {
+                        timeout: TimeInterval = 1.5, expectOne: Bool = false,
+                        onReply: ((String, [String: Any]) -> Void)? = nil) -> [String: [String: Any]] {
         let fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
         guard fd >= 0, let data = try? JSONSerialization.data(withJSONObject: payload) else { return [:] }
         defer { close(fd) }
@@ -52,21 +53,20 @@ enum Wiz {
             guard n > 0,
                   let json = try? JSONSerialization.jsonObject(with: Data(buf[0..<n])) as? [String: Any]
             else { continue }
-            replies[ipString(from.sin_addr)] = json
+            let ip = ipString(from.sin_addr)
+            if replies[ip] == nil { onReply?(ip, json) }
+            replies[ip] = json
             if expectOne { break }
         }
         return replies
     }
 
-    struct Capabilities {
+    struct Capabilities: Codable {
         var dimmable = true
         var kelvin: ClosedRange<Double>? = 2700...6500
     }
 
-    /// Reads what a device supports. The module name's second segment gives the class
-    /// (e.g. ESP24_SHTWC_01 = tunable white, ESP03_SHRGB1C_01 = RGB, ESP10_SOCKET_06 = plug);
-    /// the white range comes from getModelConfig (fw ≥ 1.22) or getUserConfig (older fw).
-    /// Returns nil if the device didn't answer, so the caller can retry on the next scan.
+    // moduleName class: SHTWC = tunable white, SHRGB = RGB, SOCKET = plug.
     static func capabilities(ip: String) -> Capabilities? {
         func result(_ method: String) -> [String: Any]? {
             request(["method": method, "params": [:]], to: [ip], timeout: 1, expectOne: true)
@@ -86,7 +86,65 @@ enum Wiz {
         return Capabilities(kelvin: kind.contains("RGB") ? 2200...6500 : 2700...6500)
     }
 
-    /// 255.255.255.255 plus the directed broadcast address of every active IPv4 interface.
+    static func listen(_ handler: @escaping (String, [String: Any]) -> Void) -> Bool {
+        let fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
+        guard fd >= 0 else { return false }
+        var yes: Int32 = 1
+        setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
+        setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &yes, socklen_t(MemoryLayout<Int32>.size))
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = pushPort.bigEndian
+        addr.sin_addr.s_addr = INADDR_ANY
+        let bound = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        }
+        guard bound == 0 else { close(fd); return false }
+
+        Thread.detachNewThread {
+            var buf = [UInt8](repeating: 0, count: 4096)
+            while true {
+                var from = sockaddr_in()
+                var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+                let n = withUnsafeMutablePointer(to: &from) {
+                    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { recvfrom(fd, &buf, buf.count, 0, $0, &len) }
+                }
+                guard n > 0, let json = try? JSONSerialization.jsonObject(with: Data(buf[0..<n])) as? [String: Any]
+                else { continue }
+                handler(ipString(from.sin_addr), json)
+            }
+        }
+        return true
+    }
+
+    // Bulbs drop registrations after ~30s.
+    static func register(_ ips: [String]) {
+        guard let first = ips.first, let me = localAddress(toward: first) else { return }
+        request(["id": 1, "method": "registration",
+                 "params": ["phoneIp": me, "phoneMac": "a1b2c3d4e5f6", "register": true]],
+                to: ips, timeout: 0.5)
+    }
+
+    static func localAddress(toward host: String) -> String? {
+        let fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
+        guard fd >= 0 else { return nil }
+        defer { close(fd) }
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = port.bigEndian
+        inet_pton(AF_INET, host, &addr.sin_addr)
+        let connected = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        }
+        guard connected == 0 else { return nil }
+        var local = sockaddr_in()
+        var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let ok = withUnsafeMutablePointer(to: &local) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &len) }
+        }
+        return ok == 0 ? ipString(local.sin_addr) : nil
+    }
+
     static func broadcastAddresses() -> [String] {
         var result: Set<String> = ["255.255.255.255"]
         var ifap: UnsafeMutablePointer<ifaddrs>?
