@@ -1,5 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-<stop offset="0" stop-color="#FFF6DE"/><stop offset="0.55" stop-color="#FFD27A"/><stop offset="1" stop-color="#F6A43C"/>
-</linearGradient></defs>
-<path d="M512.0 236.4 C393.2 236.4 314.0 328.9 314.0 434.4 C314.0 507.0 353.6 553.2 386.6 592.8 C406.4 619.2 419.6 645.6 419.6 672.0 L604.4 672.0 C604.4 645.6 617.6 619.2 637.4 592.8 C670.4 553.2 710.0 507.0 710.0 434.4 C710.0 328.9 630.8 236.4 512.0 236.4 Z" fill="url(#g)"/></svg>
+<defs><radialGradient id="g" cx="470" cy="360" r="330" gradientUnits="userSpaceOnUse">
+<stop offset="0" stop-color="#FFFDF4"/><stop offset="0.4" stop-color="#FFE7A8"/><stop offset="0.8" stop-color="#FFB547"/><stop offset="1" stop-color="#F28A2E"/>
+</radialGradient></defs>
+<path d="M512.0 236.4 C393.2 236.4 314.0 328.9 314.0 434.4 C314.0 507.0 353.6 553.2 386.6 592.8 C406.4 619.2 419.6 645.6 419.6 672.0 L604.4 672.0 C604.4 645.6 617.6 619.2 637.4 592.8 C670.4 553.2 710.0 507.0 710.0 434.4 C710.0 328.9 630.8 236.4 512.0 236.4 Z" fill="url(#g)"/>
+<path d="M366 420 C366 340 420 286 486 274" fill="none" stroke="#FFFFFF" stroke-width="22" stroke-linecap="round" opacity="0.75"/>
+<circle cx="372" cy="470" r="11" fill="#FFFFFF" opacity="0.6"/>
+<path d="M466 672 L466 560 L482 520 L498 560 L512 520 L526 560 L542 520 L558 560 L558 672" fill="none" stroke="#E2701C" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" opacity="0.85"/>
+</svg>

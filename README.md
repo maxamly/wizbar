@@ -92,6 +92,7 @@ WizBar also sends each bulb a `registration`, renewed every 20 seconds. Bulbs th
 | `Sources/Controls.swift` | Sliders, buttons, color-temperature colors |
 | `Sources/Updater.swift` | Checks GitHub Releases and installs updates |
 | `Icon/AppIcon.icon` | App icon; open it in Icon Composer to edit |
+| `Icon/Flat` | Flat version of the icon (SVG, PNG) |
 
 ## Contributing
 
