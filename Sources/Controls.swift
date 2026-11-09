@@ -24,6 +24,7 @@ struct Orb: View {
     let on: Bool
     let color: Color
     var size: CGFloat = 34
+    var level = 1.0
     let name: String
     var enabled = true
     let action: () -> Void
@@ -32,14 +33,17 @@ struct Orb: View {
         Button(action: action) {
             Image(systemName: on ? "lightbulb.fill" : "lightbulb")
                 .font(.system(size: size * 0.42, weight: .medium))
+                .symbolEffect(.bounce, value: on)
                 .foregroundStyle(on ? Color.black.opacity(0.6) : Color.primary.opacity(0.65))
                 .frame(width: size, height: size)
-                .background(Circle().fill(on ? color : .clear))
+                .background(Circle().fill(on ? AnyShapeStyle(RadialGradient(
+                    colors: [color.mix(with: .white, by: 0.55), color],
+                    center: UnitPoint(x: 0.5, y: 0.35), startRadius: 0, endRadius: size * 0.55)) : AnyShapeStyle(.clear)))
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .glassEffect(.regular.interactive(enabled), in: .circle)
-        .shadow(color: on ? color.opacity(0.6) : .clear, radius: size * 0.25)
+        .shadow(color: on ? color.opacity(0.3 + 0.45 * level) : .clear, radius: size * (0.15 + 0.2 * level))
         .animation(.easeOut(duration: 0.2), value: on)
         .disabled(!enabled)
         .help(on ? "Turn off \(name)" : "Turn on \(name)")
@@ -54,36 +58,60 @@ let cardShape = ConcentricRectangle(corners: .concentric(minimum: 18), isUniform
 struct LevelSlider: View {
     let value: Double
     let color: Color
+    var on = true
     var height: CGFloat = 26
-    var showsLabel = true
     let onChange: (Int) -> Void
+
+    @GestureState private var dragging = false
+    @State private var scrolled = 0.0
 
     private var level: Int { Int(value.rounded()) }
 
     var body: some View {
         GeometryReader { geo in
             let fraction = (value - 10) / 90
+            let fill = max(height, geo.size.width * CGFloat(fraction))
+            let onFill: AnyShapeStyle = on ? AnyShapeStyle(.black.opacity(0.5)) : AnyShapeStyle(.secondary)
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.primary.opacity(0.08))
-                Capsule().fill(color).frame(width: max(height, geo.size.width * CGFloat(fraction)))
-                HStack {
-                    Image(systemName: "sun.max.fill")
-                        .font(.system(size: height * 0.42, weight: .semibold))
-                        .foregroundStyle(.black.opacity(0.45))
-                    Spacer()
-                    if showsLabel {
-                        Text("\(level)%")
-                            .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                            .foregroundStyle(fraction > 0.85 ? AnyShapeStyle(.black.opacity(0.5)) : AnyShapeStyle(.secondary))
-                            .contentTransition(.numericText(value: value))
+                Capsule().fill(color).frame(width: fill)
+                    .shadow(color: on ? color.opacity(0.45) : .clear, radius: 6)
+                    .overlay(alignment: .trailing) {
+                        Capsule().fill(.black.opacity(on ? 0.22 : 0.12))
+                            .frame(width: 3, height: height * 0.42)
+                            .padding(.trailing, height * 0.22)
+                            .opacity(fill < geo.size.width - height * 1.6 && fill > height * 1.4 ? 1 : 0)
                     }
+                    .animation(dragging ? nil : .snappy(duration: 0.3), value: value)
+                HStack {
+                    Image(systemName: level < 40 ? "sun.min.fill" : "sun.max.fill")
+                        .font(.system(size: height * 0.42, weight: .semibold))
+                        .foregroundStyle(onFill)
+                        .contentTransition(.symbolEffect(.replace))
+                    Spacer()
+                    Text("\(level)%")
+                        .font(.system(size: max(10, height * 0.38), weight: .semibold).monospacedDigit())
+                        .foregroundStyle(fill > geo.size.width - height * 1.6 ? onFill : AnyShapeStyle(.secondary))
+                        .contentTransition(.numericText(value: value))
                 }
                 .padding(.horizontal, height * 0.3)
             }
             .contentShape(Capsule())
-            .gesture(DragGesture(minimumDistance: 0).onChanged { update(at: $0.location.x, geo.size.width) })
+            .gesture(DragGesture(minimumDistance: 0)
+                .updating($dragging) { _, state, _ in state = true }
+                .onChanged { update(at: $0.location.x, geo.size.width) })
+            .onHorizontalScroll { dx in
+                scrolled += dx / geo.size.width * 90
+                let steps = Int(scrolled)
+                guard steps != 0 else { return }
+                scrolled -= Double(steps)
+                let new = min(max(level + steps, 10), 100)
+                if new != level { onChange(new) }
+            }
         }
         .frame(height: height)
+        .scaleEffect(y: dragging ? 1.12 : 1)
+        .animation(.snappy(duration: 0.2), value: dragging)
         .sensoryFeedback(.alignment, trigger: level == 10 || level == 100) { _, atEnd in atEnd }
         .accessibilityElement()
         .accessibilityLabel("Brightness")
@@ -106,8 +134,13 @@ struct LevelSlider: View {
 struct TempSlider: View {
     let kelvin: Double
     let range: ClosedRange<Double>
+    var on = true
     var height: CGFloat = 26
     let onChange: (Int) -> Void
+
+    @GestureState private var dragging = false
+    @State private var hovering = false
+    @State private var scrolled = 0.0
 
     private var span: Double { range.upperBound - range.lowerBound }
     private var current: Int { Int((kelvin / 50).rounded() * 50) }
@@ -121,18 +154,41 @@ struct TempSlider: View {
                     colors: [Kelvin.color(range.lowerBound), Kelvin.color((range.lowerBound + range.upperBound) / 2),
                              Kelvin.color(range.upperBound)],
                     startPoint: .leading, endPoint: .trailing))
+                Text("\(current) K")
+                    .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(.black.opacity(0.5))
+                    .contentTransition(.numericText(value: kelvin))
+                    .padding(.horizontal, height * 0.4)
+                    .frame(maxWidth: .infinity, alignment: fraction > 0.5 ? .leading : .trailing)
+                    .opacity(dragging || hovering ? 1 : 0)
                 Circle()
                     .fill(Kelvin.color(kelvin))
                     .padding(5)
                     .frame(width: knob, height: knob)
                     .glassEffect(.regular.interactive(), in: .circle)
                     .shadow(color: .black.opacity(0.2), radius: 2, y: 1)
+                    .scaleEffect(dragging ? 1.15 : 1)
                     .offset(x: 3 + (geo.size.width - knob - 6) * CGFloat(fraction))
+                    .animation(dragging ? nil : .snappy(duration: 0.3), value: kelvin)
             }
             .contentShape(Capsule())
-            .gesture(DragGesture(minimumDistance: 0).onChanged { update(at: $0.location.x, geo.size.width) })
+            .gesture(DragGesture(minimumDistance: 0)
+                .updating($dragging) { _, state, _ in state = true }
+                .onChanged { update(at: $0.location.x, geo.size.width) })
+            .onHorizontalScroll { dx in
+                scrolled += dx / geo.size.width * span
+                let steps = Int(scrolled / 50)
+                guard steps != 0 else { return }
+                scrolled -= Double(steps * 50)
+                let new = Int(min(max(Double(current + steps * 50), range.lowerBound), range.upperBound))
+                if new != current { onChange(new) }
+            }
         }
         .frame(height: height)
+        .saturation(on || dragging || hovering ? 1 : 0.35)
+        .opacity(on || dragging || hovering ? 1 : 0.6)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.15), value: on || dragging || hovering)
         .sensoryFeedback(.alignment, trigger: kelvin <= range.lowerBound || kelvin >= range.upperBound) { _, atEnd in atEnd }
         .accessibilityElement()
         .accessibilityLabel("Color temperature")
@@ -153,10 +209,48 @@ struct TempSlider: View {
     }
 }
 
+// Sideways trackpad swipes adjust a slider under the pointer; vertical ones still scroll the panel.
+private final class ScrollBox {
+    var hovering = false
+    var action: (CGFloat) -> Void = { _ in }
+    var monitor: Any?
+    deinit { stop() }
+
+    func start() {
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            guard let self, hovering, abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) else { return event }
+            if event.momentumPhase.isEmpty {
+                action(event.isDirectionInvertedFromDevice ? event.scrollingDeltaX : -event.scrollingDeltaX)
+            }
+            return nil
+        }
+    }
+
+    func stop() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+    }
+}
+
+private struct HorizontalScroll: ViewModifier {
+    let action: (CGFloat) -> Void
+    @State private var box = ScrollBox()
+
+    func body(content: Content) -> some View {
+        box.action = action
+        return content
+            .onHover { box.hovering = $0 }
+            .onAppear { box.start() }
+            .onDisappear { box.stop(); box.hovering = false }
+    }
+}
+
 struct IconButton: View {
     let symbol: String
     let help: String
     var spinning = false
+    var tint: Color?
     let action: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -170,10 +264,12 @@ struct IconButton: View {
                         .truncatingRemainder(dividingBy: 1) * 360 : 0))
                     .symbolEffect(.pulse, isActive: spinning && reduceMotion)
             }
+            .foregroundStyle(tint == nil ? AnyShapeStyle(.primary) : AnyShapeStyle(.black.opacity(0.65)))
             .glassCircle()
         }
         .buttonStyle(.plain)
-        .glassEffect(.regular.interactive(), in: .circle)
+        .glassEffect(tint.map { .regular.tint($0).interactive() } ?? .regular.interactive(), in: .circle)
+        .animation(.easeOut(duration: 0.2), value: tint)
         .help(help)
         .accessibilityLabel(help)
     }
@@ -182,6 +278,10 @@ struct IconButton: View {
 extension View {
     func glassCircle() -> some View {
         frame(width: 28, height: 28).contentShape(Circle())
+    }
+
+    func onHorizontalScroll(_ action: @escaping (CGFloat) -> Void) -> some View {
+        modifier(HorizontalScroll(action: action))
     }
 }
 

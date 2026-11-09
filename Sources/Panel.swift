@@ -11,6 +11,11 @@ struct Panel: View {
 
     private var anyOn: Bool { store.bulbs.contains(where: \.on) }
 
+    private var litColor: Color? {
+        let lit = store.bulbs.filter(\.on)
+        return lit.isEmpty ? nil : Kelvin.color(lit.map(\.temp).reduce(0, +) / Double(lit.count))
+    }
+
     private var maxScrollHeight: CGFloat {
         (NSScreen.main?.visibleFrame.height ?? 800) - 110
     }
@@ -32,16 +37,33 @@ struct Panel: View {
             .onPreferenceChange(HeightKey.self) { contentHeight = $0 }
         }
         .frame(width: 320)
+        .background(alignment: .top) { ambience }
+        .fontDesign(.rounded)
         .onAppear {
             store.scan()
             launchAtLogin = SMAppService.mainApp.status == .enabled
         }
     }
 
+    // The panel is lit by the lights themselves: their color, and more of it the brighter the home is.
+    private var ambience: some View {
+        let lit = store.bulbs.filter(\.on)
+        let share = store.bulbs.isEmpty ? 0 : Double(lit.count) / Double(store.bulbs.count)
+        let level = lit.isEmpty ? 0 : lit.map { $0.dimmable ? $0.dimming / 100 : 1 }.reduce(0, +) / Double(lit.count)
+        return EllipticalGradient(
+            colors: [(litColor ?? .clear).opacity(0.5 * level * (0.4 + 0.6 * share)), .clear],
+            center: .top, startRadiusFraction: 0, endRadiusFraction: 0.5)
+            .frame(width: 480, height: 300)
+            .offset(y: -40)
+            .allowsHitTesting(false)
+            .animation(.easeOut(duration: 0.4), value: litColor)
+            .animation(.easeOut(duration: 0.4), value: level * share)
+    }
+
     private var header: some View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 1) {
-                Text("Lights").font(.system(size: 17, weight: .bold))
+                Text("Lights").font(.system(size: 20, weight: .bold))
                 Text(summary).font(.system(size: 11)).foregroundStyle(.secondary).contentTransition(.numericText())
             }
             Spacer()
@@ -50,7 +72,7 @@ struct Panel: View {
                     IconButton(symbol: "arrow.trianglehead.2.clockwise", help: "Refresh", spinning: store.scanning) { store.scan() }
                         .keyboardShortcut("r")
                     if !store.bulbs.isEmpty {
-                        IconButton(symbol: "power", help: anyOn ? "Turn everything off" : "Turn everything on") {
+                        IconButton(symbol: "power", help: anyOn ? "Turn everything off" : "Turn everything on", tint: litColor) {
                             store.apply(store.bulbs.map(\.id), ["state": !anyOn])
                         }
                     }
@@ -185,9 +207,12 @@ struct Panel: View {
 
     private var emptyState: some View {
         VStack(spacing: 8) {
-            Image(systemName: "lightbulb.slash")
+            Image(systemName: store.scanning ? "dot.radiowaves.left.and.right" : "lightbulb.slash")
                 .font(.system(size: 26))
                 .foregroundStyle(.tertiary)
+                .symbolEffect(.variableColor.iterative, isActive: store.scanning)
+                .contentTransition(.symbolEffect(.replace))
+                .frame(height: 32)
             Text(store.scanning ? "Looking for lights…" : "No lights found")
                 .font(.system(size: 13, weight: .semibold))
             if !store.scanning {
@@ -231,11 +256,23 @@ struct RoomCard: View {
 
     private var color: Color { room.isOn ? Kelvin.color(room.temp) : Color.primary.opacity(0.18) }
     private var hasDetails: Bool { room.dimmable || room.bulbs.count > 1 }
+    private var level: Double { room.dimmable ? (room.dimming - 10) / 90 : 1 }
+
+    // Light spilling from the orb, stronger as the room gets brighter.
+    private var glow: some View {
+        Circle()
+            .fill(RadialGradient(
+                colors: [Kelvin.color(room.temp).opacity(room.isOn ? 0.25 + 0.45 * level : 0), .clear],
+                center: .center, startRadius: 0, endRadius: 170))
+            .frame(width: 340, height: 340)
+            .offset(x: -141, y: -141)
+            .allowsHitTesting(false)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                Orb(on: room.isOn, color: Kelvin.color(room.temp), name: room.name, enabled: room.online) {
+                Orb(on: room.isOn, color: Kelvin.color(room.temp), level: level, name: room.name, enabled: room.online) {
                     store.apply(room.ids, ["state": !room.isOn])
                 }
                 Button {
@@ -267,12 +304,12 @@ struct RoomCard: View {
 
             Group {
                 if room.dimmable {
-                    LevelSlider(value: room.dimming, color: color) {
+                    LevelSlider(value: room.dimming, color: color, on: room.isOn, height: 30) {
                         store.apply(room.ids, ["state": true, "dimming": $0])
                     }
                 }
                 if let range = room.kelvinRange {
-                    TempSlider(kelvin: room.temp, range: range) {
+                    TempSlider(kelvin: room.temp, range: range, on: room.isOn) {
                         store.apply(room.ids, ["state": true, "temp": $0])
                     }
                 }
@@ -297,7 +334,9 @@ struct RoomCard: View {
             .disabled(!room.online)
         }
         .padding(12)
-        .glassEffect(room.isOn ? .regular.tint(Kelvin.color(room.temp).opacity(0.3)) : .regular, in: cardShape)
+        .background(alignment: .topLeading) { glow }
+        .clipShape(cardShape)
+        .glassEffect(room.isOn ? .regular.tint(Kelvin.color(room.temp).opacity(0.18)) : .regular, in: cardShape)
         .opacity(room.online ? 1 : 0.55)
         .animation(.easeOut(duration: 0.2), value: room.isOn)
     }
@@ -345,7 +384,8 @@ struct BulbRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Orb(on: bulb.on, color: Kelvin.color(bulb.temp), size: 24, name: store.name(bulb), enabled: bulb.online) {
+            Orb(on: bulb.on, color: Kelvin.color(bulb.temp), size: 24, level: bulb.dimmable ? (bulb.dimming - 10) / 90 : 1,
+                name: store.name(bulb), enabled: bulb.online) {
                 store.apply([bulb.id], ["state": !bulb.on])
             }
             VStack(alignment: .leading, spacing: 0) {
@@ -359,7 +399,7 @@ struct BulbRow: View {
                 LevelSlider(
                     value: bulb.dimming,
                     color: bulb.on ? Kelvin.color(bulb.temp) : Color.primary.opacity(0.18),
-                    height: 20, showsLabel: false
+                    on: bulb.on, height: 20
                 ) { store.apply([bulb.id], ["state": true, "dimming": $0]) }
                 .frame(width: 120)
                 .disabled(!bulb.online)
